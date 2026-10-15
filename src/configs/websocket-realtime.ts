@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { WebSocket as WebSocketTransport } from "engine.io-client";
-import type { Catalog, NFT, Order, RealtimeEvent } from "./domain";
-import { invalidateCommerce, queryClient } from "./api";
-// Resolve the global constructor when connecting, after MSW installs its interceptor.
+import type { Catalog, NFT, Order, RealtimeEvent } from "../domain";
+
+import { invalidateCommerce, queryClient } from "../api";
+
 class InterceptableWebSocket extends WebSocketTransport {
   createSocket(uri: string, protocols?: string | string[]) {
     return protocols
@@ -42,7 +43,8 @@ export function useRealtime(
         })) {
           cachedVersion = Math.max(
             cachedVersion,
-            catalog?.items.find((n) => n.id === event.resourceId)?.version ?? 0,
+            catalog?.items?.find((n) => n.id === event.resourceId)?.version ??
+              0,
           );
         }
       if (Math.max(versions.get(key) ?? 0, cachedVersion) >= event.version)

@@ -2,9 +2,7 @@ import { expect, type Page } from "@playwright/test";
 export async function start(page: Page, scenario = "standard") {
   await page.clock.install({ time: new Date("2026-10-15T12:00:00Z") });
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: /SEJA DONO DO FUTURO/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /SEJA DONO/ })).toBeVisible();
   await page.evaluate(async (scenario) => {
     await fetch("/api/demo/reset", {
       method: "POST",
@@ -13,9 +11,7 @@ export async function start(page: Page, scenario = "standard") {
     });
   }, scenario);
   await page.reload();
-  await expect(
-    page.getByRole("heading", { name: /SEJA DONO DO FUTURO/ }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: /SEJA DONO/ })).toBeVisible();
 }
 export async function scenario(page: Page, value: string) {
   await page.evaluate(async (scenario) => {
@@ -64,7 +60,7 @@ export async function review(page: Page) {
     .click();
   await page.getByRole("checkbox", { name: /Entendo que esta/ }).check();
   await page
-    .getByRole("button", { name: "Revisar pedido", exact: true })
+    .getByRole("button", { name: "Confirmar compra", exact: true })
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
 }

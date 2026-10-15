@@ -1,6 +1,6 @@
 import { ws } from "msw";
 import { toSocketIo } from "@mswjs/socket.io-binding";
-import type { NFT, Order } from "../domain";
+import type { NFT, Order } from "../../domain";
 import { currentUser } from "./db";
 // MSW 2.11 normalizes the Socket.IO prefix to `/` before matching.
 const channel = ws.link(

@@ -5,13 +5,14 @@ import {
   redirect,
   type SearchSchemaInput,
 } from "@tanstack/react-router";
-import { AppShell } from "./shell";
-import { Home, Detail } from "./pages/catalog";
-import { CartPage, Checkout, OrderPage } from "./pages/commerce";
-import { AuthPage, Profile, Wallets, Orders } from "./pages/account";
-import { api } from "./api";
-import { defaultSearch } from "./domain";
-import { Empty } from "./components/shared";
+import { AppShell } from "../shell";
+import { Home, Detail } from "../pages/catalog";
+import { CartPage, Checkout, OrderPage } from "../pages/commerce";
+import { AuthPage, Profile, Wallets, Orders } from "../pages/account";
+import { api } from "../api";
+import { defaultSearch } from "../domain";
+import { Empty } from "../components/shared";
+
 const root = createRootRoute({
   component: AppShell,
   notFoundComponent: () => (
@@ -40,6 +41,9 @@ export const homeRoute = createRoute({
     favorites: s.favorites === true || s.favorites === "true",
   }),
   component: Home,
+  beforeLoad: async ({ search, location }) => {
+    if (search.favorites) await protect({ location });
+  },
 });
 const detail = createRoute({
   getParentRoute: () => root,

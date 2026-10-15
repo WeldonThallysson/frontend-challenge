@@ -9,6 +9,9 @@ export type NFT = {
   stock: number;
   version: number;
   creator: string;
+  rarity?: string;
+  rating?: number;
+  reviews?: { id: string; author: string; rating: number; text: string }[];
   editions: { id: string; label: string; stock: number }[];
 };
 export type Wallet = {
@@ -17,6 +20,13 @@ export type Wallet = {
   address: string;
   network: string;
   primary: boolean;
+  displayName?: string;
+  profileName?: string;
+  email?: string;
+  ens?: string;
+  secondaryWallet?: string;
+  referral?: string;
+  provider?: string;
 };
 export type User = {
   id: string;
@@ -50,6 +60,12 @@ export type Order = {
   transaction: string;
   createdAt: string;
   reason?: string;
+  payment?: {
+    provider: string;
+    network: string;
+    walletLabel: string;
+    walletAddress: string;
+  };
 };
 export type CatalogSearch = {
   q: string;

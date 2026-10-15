@@ -7,7 +7,9 @@ import {
   type Order,
   type Quote,
   type User,
-} from "../domain";
+} from "../../domain";
+import { createStore } from "zustand/vanilla";
+import { persist, type PersistStorage } from "zustand/middleware";
 export const scenarios = [
   "standard",
   "empty",
@@ -15,6 +17,8 @@ export const scenarios = [
   "out-of-order",
   "offline",
   "server-error",
+  "invalid-catalog",
+  "invalid-response",
   "expired",
   "favorite-error",
   "price-change",
@@ -69,6 +73,22 @@ export async function hashPassword(password: string) {
     .map((x) => x.toString(16).padStart(2, "0"))
     .join("");
 }
+function presentation(index: number) {
+  return {
+    rarity: index === 2 ? "Raro" : undefined,
+    rating: 4.8,
+    reviews: Array.from({ length: 19 }, (_, item) => ({
+      id: `review-${index}-${item}`,
+      author: `Colecionador ${String(item + 1).padStart(2, "0")}`,
+      rating: item % 10 === 0 ? 3 : 5,
+      text: [
+        "Os detalhes e as cores desta edição se destacam na coleção.",
+        "Uma peça cheia de personalidade. Gostei da composição e dos atributos.",
+        "A galeria ajudou a conferir a arte antes de colecionar.",
+      ][item % 3],
+    })),
+  };
+}
 export async function seed(): Promise<DB> {
   const hash = await hashPassword("Kurio123!");
   return {
@@ -93,6 +113,7 @@ export async function seed(): Promise<DB> {
       stock: 12,
       version: 1,
       creator: ["Studio Kurio", "Nomad Collective", "Noir Atelier"][i % 3],
+      ...presentation(i),
       editions: [
         { id: "original", label: "Edição original", stock: 8 },
         { id: "limited", label: "Edição limitada", stock: 4 },
@@ -129,21 +150,142 @@ export async function seed(): Promise<DB> {
     revision: 1,
   };
 }
+const storageKey = "kurio:db:v1";
+const backupKey = "kurio:db:backup:v1";
+type DatabaseState = { database: DB | null };
+function readStored(key: string): unknown {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+const storage: PersistStorage<DatabaseState> = {
+  getItem: () => ({
+    state: {
+      database: (readStored(storageKey) ?? readStored(backupKey)) as DB | null,
+    },
+    version: 1,
+  }),
+  setItem: (_key, value) => {
+    const serialized = JSON.stringify(value.state.database);
+    try {
+      localStorage.setItem(storageKey, serialized);
+    } catch {
+      throw new Error(
+        "Não foi possível salvar neste navegador. Libere espaço e tente novamente. Os dados existentes foram preservados.",
+      );
+    }
+    // A backup failure must not invalidate an already persisted operation.
+    try {
+      localStorage.setItem(backupKey, serialized);
+    } catch {
+      /* primary snapshot is saved */
+    }
+  },
+  removeItem: () => {
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(backupKey);
+  },
+};
+const databaseStore = createStore<DatabaseState>()(
+  persist((): DatabaseState => ({ database: null }), {
+    name: storageKey,
+    version: 1,
+    storage,
+    skipHydration: true,
+  }),
+);
+function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+export function repairDatabase(value: unknown, defaults: DB): DB {
+  const source = record(value);
+  const users = Array.isArray(source.users) ? source.users : defaults.users;
+  const nfts = Array.isArray(source.nfts) ? source.nfts : defaults.nfts;
+  return {
+    ...defaults,
+    ...source,
+    users: users.map((entry) => {
+      const user = record(entry);
+      const previous = defaults.users.find((item) => item.id === user.id);
+      return {
+        ...previous,
+        ...user,
+        name:
+          typeof user.name === "string" && user.name.trim()
+            ? user.name
+            : "Colecionador",
+        favorites: Array.isArray(user.favorites)
+          ? user.favorites
+          : (previous?.favorites ?? []),
+        cart: Array.isArray(user.cart) ? user.cart : (previous?.cart ?? []),
+        wallets: Array.isArray(user.wallets)
+          ? user.wallets
+          : (previous?.wallets ?? []),
+      } as Account;
+    }),
+    nfts: nfts.map((entry) => {
+      const nft = record(entry);
+      const previous = defaults.nfts.find((item) => item.id === nft.id);
+      return {
+        ...previous,
+        ...nft,
+        editions:
+          Array.isArray(nft.editions) && nft.editions.length
+            ? nft.editions
+            : (previous?.editions ?? []),
+      } as NFT;
+    }),
+    guest: Array.isArray(source.guest) ? source.guest : defaults.guest,
+    orders: Array.isArray(source.orders) ? source.orders : defaults.orders,
+    quotes: record(source.quotes) as Record<string, Quote>,
+    attempts: record(source.attempts) as DB["attempts"],
+    session:
+      source.session === null
+        ? null
+        : typeof record(source.session).userId === "string" &&
+            typeof record(source.session).expiresAt === "number"
+          ? (source.session as DB["session"])
+          : null,
+    scenario: scenarios.includes(source.scenario as Scenario)
+      ? (source.scenario as Scenario)
+      : "standard",
+    revision:
+      typeof source.revision === "number" ? source.revision : defaults.revision,
+  };
+}
 let db: DB;
 export async function initDB() {
-  try {
-    const raw = localStorage.getItem("kurio:db:v1");
-    db = raw ? JSON.parse(raw) : await seed();
-  } catch {
-    db = await seed();
-  }
+  await databaseStore.persist.rehydrate();
+  const defaults = await seed();
+  const backup = readStored(backupKey);
+  const recovered = backup ? repairDatabase(backup, defaults) : defaults;
+  db = repairDatabase(databaseStore.getState().database, recovered);
+  // Add presentation metadata without replacing persisted prices, stock or accounts.
+  db.nfts.forEach((nft, index) => {
+    const details = presentation(index);
+    nft.rating ??= details.rating;
+    nft.reviews ??= details.reviews;
+    if (details.rarity) nft.rarity ??= details.rarity;
+  });
   save();
 }
 export function getDB() {
   return db;
 }
 export function save() {
-  localStorage.setItem("kurio:db:v1", JSON.stringify(db));
+  // Quotes are short-lived; order receipts hold their own immutable snapshots.
+  db.quotes = Object.fromEntries(
+    Object.entries(db.quotes)
+      .filter(([, item]) => item && item.expiresAt > Date.now())
+      .sort(([, a], [, b]) => b.expiresAt - a.expiresAt)
+      .slice(0, 20),
+  );
+  databaseStore.setState({ database: db });
 }
 export async function reset(scenario: Scenario = "standard") {
   db = await seed();

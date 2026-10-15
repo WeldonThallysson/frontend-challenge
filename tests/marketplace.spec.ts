@@ -30,7 +30,16 @@ test("busca, filtros, ordenação, paginação e histórico", async ({
   await expect(page).toHaveURL(/page=2/);
   await page.reload();
   await expect(page.locator(".nft-grid .nft-card")).toHaveCount(9);
-  await page.getByLabel("Ordenar NFTs").selectOption("price-asc");
+  if (isMobile) {
+    await page.getByRole("button", { name: "Filtros", exact: true }).click();
+    await page
+      .getByRole("dialog")
+      .getByLabel("Ordenar resultados")
+      .selectOption("price-asc");
+    await page.getByRole("button", { name: "Ver resultados" }).click();
+  } else {
+    await page.getByLabel("Ordenar NFTs").selectOption("price-asc");
+  }
   await expect(page).toHaveURL(/sort=price-asc/);
   await page.goBack();
   await expect(page).toHaveURL(/page=2/);
@@ -62,20 +71,22 @@ test("carrinho persiste e é mesclado no login; cupom e quantidade", async ({
   await page.reload();
   await page.goto("/carrinho");
   await expect(page.locator(".cart-item")).toHaveCount(1);
-  await page.getByLabel("Quantidade de Emerald Ape #042").selectOption("2");
-  await page.getByPlaceholder("Código do cupom").fill("EXPIRED");
+  await page
+    .getByLabel("Quantidade de Emerald Ape #042", { exact: true })
+    .selectOption("2");
+  await page.getByLabel("Código promocional", { exact: true }).fill("EXPIRED");
   await page.getByRole("button", { name: "Aplicar", exact: true }).click();
   await expect(
     page.getByText("Este cupom expirou.", { exact: true }),
   ).toBeVisible();
-  await page.getByPlaceholder("Código do cupom").fill("KURIO10");
+  await page.getByLabel("Código promocional", { exact: true }).fill("KURIO10");
   await page.getByRole("button", { name: "Aplicar", exact: true }).click();
   await expect(page.locator(".summary")).toContainText("2,147 ETH");
   await login(page);
   await page.goto("/carrinho");
-  await expect(page.getByLabel("Quantidade de Emerald Ape #042")).toHaveValue(
-    "2",
-  );
+  await expect(
+    page.getByLabel("Quantidade de Emerald Ape #042", { exact: true }),
+  ).toHaveValue("2");
   await page.getByRole("button", { name: "Remover Emerald Ape #042" }).click();
   await expect(
     page.getByRole("heading", { name: "Seu carrinho está esperando por arte" }),
@@ -85,24 +96,28 @@ test("favorito otimista faz rollback e recupera", async ({ page }) => {
   await login(page);
   await page.goto("/nft/nft-1");
   await scenario(page, "favorite-error");
-  await page.getByRole("button", { name: "Adicionar aos favoritos" }).click();
+  await page
+    .getByRole("button", { name: "Adicionar aos favoritos", exact: true })
+    .click();
   await expect(page.getByRole("status")).toContainText(
     "Não foi possível salvar o favorito.",
   );
   await expect(
-    page.getByRole("button", { name: "Adicionar aos favoritos" }),
+    page.getByRole("button", { name: "Adicionar aos favoritos", exact: true }),
   ).toHaveAttribute("aria-pressed", "false");
   await scenario(page, "standard");
-  await page.getByRole("button", { name: "Adicionar aos favoritos" }).click();
+  await page
+    .getByRole("button", { name: "Adicionar aos favoritos", exact: true })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Remover dos favoritos" }),
+    page.getByRole("button", { name: "Remover dos favoritos", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
   await expect(
-    page.getByRole("button", { name: "Remover dos favoritos" }),
+    page.getByRole("button", { name: "Remover dos favoritos", exact: true }),
   ).toBeEnabled();
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Remover dos favoritos" }),
+    page.getByRole("button", { name: "Remover dos favoritos", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
 });
 test("compra completa e recibo imutável", async ({ page }) => {
@@ -113,7 +128,7 @@ test("compra completa e recibo imutável", async ({ page }) => {
   await expect(page).toHaveURL(/\/pedido\//);
   await expect(
     page.getByRole("heading", {
-      name: "Sua coleção ganhou uma nova história.",
+      name: "Seus NFTs agora estão na sua carteira",
     }),
   ).toBeVisible();
   await expect(page.locator(".summary")).toContainText("1,195 ETH");
@@ -122,7 +137,7 @@ test("compra completa e recibo imutável", async ({ page }) => {
   await page.reload();
   await expect(
     page.getByRole("heading", {
-      name: "Sua coleção ganhou uma nova história.",
+      name: "Seus NFTs agora estão na sua carteira",
     }),
   ).toBeVisible();
   await page.goto("/carrinho");
@@ -160,7 +175,7 @@ test("timeout após criação recupera exatamente o mesmo pedido", async ({
     .click();
   await expect(
     page.getByRole("heading", {
-      name: "Sua coleção ganhou uma nova história.",
+      name: "Seus NFTs agora estão na sua carteira",
     }),
   ).toBeVisible();
   await page.goto("/pedidos");
@@ -186,7 +201,7 @@ test("Socket.IO atualiza preço, ignora duplicatas e bloqueia revisão antiga", 
   await page.getByRole("button", { name: "Fechar diálogo" }).click();
   await expect(page.locator(".summary")).toContainText("1,295 ETH");
   await page
-    .getByRole("button", { name: "Revisar pedido", exact: true })
+    .getByRole("button", { name: "Confirmar compra", exact: true })
     .click();
   await expect(
     page.getByRole("button", { name: "Confirmar compra simulada" }),
@@ -202,7 +217,7 @@ test("desconexão e refresh recuperam pedido pendente", async ({ page }) => {
   await page.reload();
   await expect(
     page.getByRole("heading", {
-      name: "Sua coleção ganhou uma nova história.",
+      name: "Seus NFTs agora estão na sua carteira",
     }),
   ).toBeVisible();
   await page.goto("/pedidos");
@@ -318,7 +333,7 @@ test("foco no diálogo, teclado e ausência de overflow", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Revisar pedido", exact: true }),
+    page.getByRole("button", { name: "Confirmar compra", exact: true }),
   ).toBeFocused();
   expect(
     await page.evaluate(

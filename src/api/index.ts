@@ -1,15 +1,16 @@
+import { parseUser } from "../lib/session";
+import { parseCatalog, parseNFT, parseList } from "../lib/contracts";
 import axios from "axios";
 import { QueryClient, useQuery } from "@tanstack/react-query";
 import type {
   CartLine,
-  Catalog,
   CatalogSearch,
-  NFT,
   Order,
   Quote,
   User,
   Wallet,
-} from "./domain";
+} from "../domain";
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -24,9 +25,31 @@ export const queryClient = new QueryClient({
     mutations: { retry: 0 },
   },
 });
+
 export const http = axios.create({ baseURL: "/api", timeout: 3500 });
+
 http.interceptors.response.use(
-  (r) => r,
+  async (r) => {
+    if (
+      r.status !== 204 &&
+      !String(r.headers["content-type"]).includes("application/json")
+    ) {
+      const config = r.config as typeof r.config & { mockRecovery?: boolean };
+      if (
+        import.meta.env.VITE_ENABLE_MOCKS !== "false" &&
+        config.method === "get" &&
+        !config.mockRecovery
+      ) {
+        const { restartMocks } = await import("../constants/mocks/browser");
+        await restartMocks();
+        return http.request({ ...config, mockRecovery: true } as typeof config);
+      }
+      throw new Error(
+        "O serviço retornou uma resposta inválida. Tente novamente.",
+      );
+    }
+    return r;
+  },
   (error) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       queryClient.setQueryData(["session"], null);
@@ -48,17 +71,19 @@ export function message(error: unknown) {
 }
 export const api = {
   session: async (signal?: AbortSignal) =>
-    (await http.get<User>("/session", { signal })).data,
+    parseUser((await http.get<unknown>("/session", { signal })).data),
   catalog: async (search: CatalogSearch, signal?: AbortSignal) =>
-    (await http.get<Catalog>("/nfts", { params: search, signal })).data,
+    parseCatalog(
+      (await http.get<unknown>("/nfts", { params: search, signal })).data,
+    ),
   nft: async (id: string, signal?: AbortSignal) =>
-    (await http.get<NFT>(`/nfts/${id}`, { signal })).data,
+    parseNFT((await http.get<unknown>(`/nfts/${id}`, { signal })).data),
   cart: async (signal?: AbortSignal) =>
-    (await http.get<CartLine[]>("/cart", { signal })).data,
+    parseList<CartLine>((await http.get<unknown>("/cart", { signal })).data),
   quote: async (coupon: string, signal?: AbortSignal) =>
     (await http.post<Quote>("/quote", { coupon }, { signal })).data,
   wallets: async (signal?: AbortSignal) =>
-    (await http.get<Wallet[]>("/wallets", { signal })).data,
+    parseList<Wallet>((await http.get<unknown>("/wallets", { signal })).data),
   order: async (id: string, signal?: AbortSignal) =>
     (await http.get<Order>(`/orders/${id}`, { signal })).data,
 };
@@ -84,4 +109,9 @@ export function invalidateCommerce() {
     queryClient.invalidateQueries({ queryKey: ["cart"] }),
     queryClient.invalidateQueries({ queryKey: ["quote"] }),
   ]);
+}
+export async function logout() {
+  await http.post("/logout");
+  queryClient.clear();
+  localStorage.removeItem("kurio:attempt");
 }

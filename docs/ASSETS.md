@@ -11,6 +11,4 @@ Figma: https://www.figma.com/design/Ff0SksUi7UFtPWUO8kyNtw/Frontend-Challenge
 | Fonte IBM Plex Mono        | @fontsource/ibm-plex-mono, distribuída localmente no build                    |
 | Ícones                     | lucide-react; favicon SVG local                                               |
 
-As quatro imagens são originais do arquivo Figma. As três primeiras foram salvas a partir dos PNGs exibidos pela prévia oficial de exportação das camadas, pois o download comum não concluía. Os PNGs dessa prévia estão preservados em `design/assets/figma-ape-1.png` até `figma-ape-3.png` e têm 291×291 pixels. Os WebP de execução têm 640×640; ampliá-los não cria detalhe adicional. Em telas de alta densidade, uma exportação dos arquivos brutos em maior resolução pode melhorar a nitidez. Golden Beat foi obtido pelo download integral do PNG, com 1254×1254 pixels.
-
-As versões geradas inicialmente por ImageGen foram substituídas e não são consumidas pela aplicação final. Todas as imagens e fontes usadas em execução são locais, sem dependência de CDN.
+As quatro imagens foram exportadas do Figma em PNG original de 1254×1254 pixels e estão preservadas em design/assets/figma-ape-1.png até figma-ape-4.png. A aplicação utiliza WebP responsivo em 320, 640 e 960 pixels via srcset. Imagens e fontes usadas em execução são locais, sem dependência de CDN.
