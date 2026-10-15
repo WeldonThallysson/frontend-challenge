@@ -1,0 +1,104 @@
+export type NFT = {
+  id: string;
+  name: string;
+  image: string;
+  category: string;
+  network: string;
+  price: string;
+  previousPrice?: string;
+  stock: number;
+  version: number;
+  creator: string;
+  editions: { id: string; label: string; stock: number }[];
+};
+export type Wallet = {
+  id: string;
+  label: string;
+  address: string;
+  network: string;
+  primary: boolean;
+};
+export type User = {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  ens: string;
+  walletAlias: string;
+  avatar: string;
+  wallets: Wallet[];
+};
+export type CartLine = { nftId: string; edition: string; quantity: number };
+export type PricedLine = CartLine & { nft: NFT; lineTotal: string };
+export type Quote = {
+  id: string;
+  items: PricedLine[];
+  subtotal: string;
+  discount: string;
+  fee: string;
+  total: string;
+  coupon: string;
+  fingerprint: string;
+  expiresAt: number;
+};
+export type Order = {
+  id: string;
+  userId: string;
+  status: "pending" | "confirmed" | "declined";
+  quote: Quote;
+  version: number;
+  transaction: string;
+  createdAt: string;
+  reason?: string;
+};
+export type CatalogSearch = {
+  q: string;
+  category: string;
+  network: string;
+  sort: string;
+  page: number;
+  max: string;
+  favorites: boolean;
+};
+export type Catalog = { items: NFT[]; total: number; pages: number };
+export type RealtimeEvent = {
+  eventId: string;
+  resourceId: string;
+  version: number;
+  userId?: string;
+};
+export const toWei = (value: string): bigint => {
+  if (!/^\d+(\.\d{1,18})?$/.test(value)) throw new Error("Valor ETH inválido");
+  const [a, b = ""] = value.split(".");
+  return BigInt(a) * 10n ** 18n + BigInt(b.padEnd(18, "0"));
+};
+export const fromWei = (value: bigint): string => {
+  const integer = value / 10n ** 18n;
+  const fraction = (value % 10n ** 18n)
+    .toString()
+    .padStart(18, "0")
+    .replace(/0+$/, "");
+  return `${integer}${fraction ? "." + fraction : ""}`;
+};
+export const eth = (value: string) => `${value.replace(".", ",")} ETH`;
+export const categories = [
+  "Arte digital",
+  "Fotografia",
+  "Música",
+  "Arte 3D",
+  "Colecionáveis",
+  "Generative",
+  "Jogos",
+  "Assinaturas",
+  "Utilidade",
+];
+export const networks = ["Ethereum", "Polygon", "Solana"];
+export const defaultSearch: CatalogSearch = {
+  q: "",
+  category: "",
+  network: "",
+  sort: "recent",
+  page: 1,
+  max: "",
+  favorites: false,
+};
