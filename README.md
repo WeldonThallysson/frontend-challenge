@@ -2,6 +2,14 @@
 
 Implementação do desafio em React 19 + TypeScript, com Vite, TanStack Router/Query, Axios, Tailwind CSS 4, componentes shadcn/ui (Radix + CVA), MSW e Socket.IO. A experiência inteira é demonstrativa: nenhuma conexão com blockchain, extensão de carteira, pagamento ou credencial real.
 
+### Homologação
+
+Acesse a versão publicada do KURIO para testar a aplicação diretamente pelo navegador, sem precisar instalar dependências:
+
+**[Acessar KURIO — Ambiente de Homologação](https://kurio-frontend-desafio.vercel.app/)**
+
+O ambiente utiliza dados simulados com MSW. Não é necessário conectar uma carteira real nem realizar pagamentos.
+
 ## Executar
 
 Requer Node.js 22.19 ou superior e npm. Em um checkout limpo:
@@ -70,4 +78,8 @@ Os contratos, limites dos mocks, política de cache, isolamento de sessão e dec
 
 `dist` é uma SPA estática. Vercel e Netlify têm rewrites versionados (`vercel.json`, `public/_redirects`). Outros hosts precisam enviar rotas desconhecidas para `index.html`, preservando assets e o service worker. HTTPS ou localhost são necessários para MSW, Web Crypto e WebSocket.
 
-A prévia Sites é privada por padrão para revisão do proprietário. Isso não equivale à URL pública exigida para envio do desafio. A liberação pública e um repositório externo devem ser definidos na preparação da submissão.
+O ambiente de homologação está no início deste README. Antes do envio, publique a versão correspondente à branch de entrega. O fork recebe os commits via origin; upstream aponta para o desafio original.
+
+## Revisão final
+
+Consulte [REVISAO_FINAL.md](docs/REVISAO_FINAL.md) para persistência com Zustand, validação por campo, refinamentos mobile, cenários de resposta inválida e preparação do fork.

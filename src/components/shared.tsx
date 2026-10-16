@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, PackageOpen, RefreshCw } from "lucide-react";
-import type { ReactNode } from "react";
+import { cloneElement, isValidElement, useId, type ReactNode } from "react";
 import { Button } from "./ui/button";
 import { message } from "../api";
 export function Empty({
@@ -15,7 +15,7 @@ export function Empty({
   return (
     <section className="empty">
       <PackageOpen size={40} strokeWidth={1} />
-      <h1>{title}</h1>
+      <h1 aria-label={title}>{title}</h1>
       <p className="muted">{description}</p>
       {children ?? (
         <Button asChild>
@@ -71,11 +71,26 @@ export function Field({
   error?: string;
   children: ReactNode;
 }) {
+  const errorId = useId();
+  const control =
+    error && isValidElement<Record<string, unknown>>(children)
+      ? cloneElement(children, {
+          "aria-label": children.props["aria-label"] ?? label,
+          "aria-invalid": true,
+          "aria-describedby": [children.props["aria-describedby"], errorId]
+            .filter(Boolean)
+            .join(" "),
+        })
+      : children;
   return (
     <label className="field">
       <span>{label}</span>
-      {children}
-      {error && <small className="field-error">{error}</small>}
+      {control}
+      {error && (
+        <small id={errorId} className="field-error">
+          {error}
+        </small>
+      )}
     </label>
   );
 }
@@ -91,7 +106,7 @@ export function PageTitle({
   return (
     <header className="page-title">
       {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-      <h1>{title}</h1>
+      <h1 aria-label={title}>{title}</h1>
       {description && <p className="muted">{description}</p>}
     </header>
   );

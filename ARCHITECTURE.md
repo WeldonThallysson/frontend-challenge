@@ -2,7 +2,7 @@
 
 ## Limites e organização
 
-`domain.ts` contém contratos e aritmética ETH; `api.ts`, transporte Axios e política Query; `router.tsx`, rotas/validação de URL/proteção; `pages`, fluxos; `components/ui`, componentes adaptados do padrão shadcn/ui; `mocks`, a simulação independente da interface. Nenhum componente retorna fixtures nem altera o banco diretamente. As páginas acessam `/api` via Axios. Apenas os testes e o laboratório usam endpoints de controle dos cenários.
+`domain.ts` contém contratos e aritmética ETH; `api/index.ts`, transporte Axios e política Query; `routes/router.tsx`, rotas/validação de URL/proteção; `pages`, fluxos; `components/ui`, componentes adaptados do padrão shadcn/ui; `constants/mocks`, a simulação independente da interface. Nenhum componente retorna fixtures nem altera o banco diretamente. As páginas acessam `/api` via Axios. Apenas os testes e o laboratório usam endpoints de controle dos cenários.
 
 MSW 2.11.6 está fixado para compatibilidade com `@mswjs/socket.io-binding` 0.2.0. A inicialização termina antes do carregamento do router. Um transporte que estende o WebSocket do Engine.IO resolve o construtor global ao conectar, após a instalação do interceptor.
 
@@ -70,7 +70,7 @@ Eventos `nft.updated` e `order.updated` carregam `{eventId,resourceId,version,us
 
 Referência: arquivo Figma Frontend Challenge, desktop 1440px com padding horizontal 120px, fundo `#140D0A`, tipografia monoespaçada, botões âmbar, sidebar e grade. A implementação usa IBM Plex Mono local. Ajustes: busca visível no catálogo, laboratório no rodapé, avisos de simulação e mensagens de estados não desenhados. Links editoriais não simulam páginas funcionais; indicam “em breve”.
 
-`ape-4.webp` foi exportado diretamente do Figma (asset `87580f2def9af0ce13f4b6f6ce17bb2449bcfc16`, Golden Beat). As outras três artes foram extraídas da prévia de exportação das camadas originais do Figma e substituíram as versões provisórias geradas. A prévia tem 291×291 pixels; as cópias locais foram convertidas para WebP 640×640. Essa limitação de resolução e a procedência estão em `ASSETS.md`. Não se afirma equivalência pixel a pixel de espaçamentos.
+As quatro artes foram exportadas em PNG original de 1254×1254 pixels e convertidas para WebP responsivo em 320, 640 e 960 pixels. Os arquivos originais e a procedência estão em docs/ASSETS.md. Não se afirma equivalência automática pixel a pixel dos espaçamentos.
 
 Responsividade: 390, 768 e 1440px; filtros em diálogo no mobile, navegação compacta, formulários em uma coluna. Componentes Radix controlam foco/modalidade/Escape; foco retorna ao acionador. Há skip link, landmarks, labels, aria-pressed, status acessível e contraste melhorado dos botões. Movimento reduzido desativa shimmer/animações. Skeletons reservam espaço de imagem e o detalhe reserva a altura do conteúdo para evitar movimentar o rodapé.
 
@@ -79,3 +79,5 @@ Responsividade: 390, 768 e 1440px; filtros em diálogo no mobile, navegação co
 E2E cobre operações e falhas nos dois viewports principais. As screenshots são evidências da implementação, não provas automáticas de fidelidade ao Figma. Lighthouse é executado com build real, assets e mocks ativos, três medições por página/perfil. Consulte `reports/lighthouse/summary.json` para resultados e ambiente; não são pontuações estimadas.
 
 O estado local não sincroniza bancos entre dispositivos ou garante concorrência transacional entre múltiplas abas. Esta arquitetura atende à simulação isolada do desafio; para produção, autenticação, idempotência, estoque e pagamentos pertencem a um backend. A prévia privada não cumpre sozinha a exigência de um deploy público para avaliação externa.
+
+A persistência, recuperação de respostas inválidas, regras atuais do checkout e decisões finais estão detalhadas em [docs/REVISAO_FINAL.md](docs/REVISAO_FINAL.md). O banco simulado usa Zustand persist com adaptador compatível com a chave legada e backup local; TanStack Query continua responsável pelos dados remotos e sua revalidação. Os assets originais de 1254 pixels substituíram as prévias de baixa resolução mencionadas no histórico.
