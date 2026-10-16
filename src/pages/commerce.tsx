@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import axios from "axios";
+import { collectorErrors } from "../lib/collector";
 import {
   ArrowRight,
   ArrowLeft,
@@ -22,7 +23,8 @@ import {
   useCart,
   useSession,
 } from "../api";
-import { eth, type CartLine, type Order, type Quote } from "../domain";
+import { eth, fromWei, toWei } from "../domain";
+import type { CartLine, Order, Quote } from "../types";
 import { useToast } from "../shell";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
@@ -34,6 +36,7 @@ import {
   Skeleton,
 } from "../components/shared";
 import { Related } from "./catalog";
+import { MobilePurchasePanel } from "../components/mobile-purchase-panel";
 function useCoupon() {
   const [coupon, setCouponState] = useState(
     () => localStorage.getItem("kurio:coupon") ?? "",
@@ -57,26 +60,42 @@ function useQuote(coupon: string) {
 export function Summary({
   quote,
   children,
+  beforeTotals,
+  showItems = true,
+  title = "Seus NFTs",
 }: {
   quote: Quote;
   children?: React.ReactNode;
+  beforeTotals?: React.ReactNode;
+  showItems?: boolean;
+  title?: string;
 }) {
   return (
     <aside className="summary">
-      <h2>Resumo do pedido</h2>
-      <div className="summary-items">
-        {quote.items.map((l) => (
-          <div key={`${l.nftId}:${l.edition}`}>
-            <img src={l.nft.image} alt="" width="44" height="44" />
-            <span>
-              {l.nft.name}
-              <small>
-                {l.quantity} × {eth(l.nft.price)}
-              </small>
-            </span>
+      <h2>{title}</h2>
+      {showItems && (
+        <div className="summary-items">
+          <div className="summary-columns">
+            <span>NFTs</span>
+            <span>Subtotal</span>
           </div>
-        ))}
-      </div>
+          {quote.items.map((l) => (
+            <div key={`${l.nftId}:${l.edition}`}>
+              <img src={l.nft.image} alt="" width="44" height="44" />
+              <span>
+                {l.nft.name}
+                <small>
+                  ID do token: #
+                  {l.nft.name.match(/#(\d+)/)?.[1].padStart(4, "0")} · ×{" "}
+                  {l.quantity}
+                </small>
+              </span>
+              <strong>{eth(l.lineTotal)}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+      {beforeTotals}
       <dl>
         <div>
           <dt>Subtotal</dt>
@@ -141,8 +160,16 @@ function CartItem({ line }: { line: CartLine }) {
         )}
       </div>
       <span className="price">{eth(n.price)}</span>
-      <label className="quantity-control">
+      <div className="quantity-control">
         <span className="sr-only">Quantidade de {n.name}</span>
+        <button
+          type="button"
+          aria-label={`Diminuir quantidade de ${n.name}`}
+          disabled={change.isPending || line.quantity <= 1}
+          onClick={() => change.mutate(line.quantity - 1)}
+        >
+          −
+        </button>
         <select
           disabled={change.isPending}
           aria-label={`Quantidade de ${n.name}`}
@@ -155,7 +182,18 @@ function CartItem({ line }: { line: CartLine }) {
             </option>
           ))}
         </select>
-      </label>
+        <button
+          type="button"
+          aria-label={`Aumentar quantidade de ${n.name}`}
+          disabled={change.isPending || line.quantity >= stock}
+          onClick={() => change.mutate(line.quantity + 1)}
+        >
+          +
+        </button>
+      </div>
+      <strong className="cart-line-total">
+        {eth(fromWei(toWei(n.price) * BigInt(line.quantity)))}
+      </strong>
       <Button
         aria-label={`Remover ${n.name}`}
         size="icon"
@@ -205,55 +243,15 @@ export function CartPage() {
             <div className="cart-table-heading">
               <span>NFT / Edição</span>
               <span>Preço</span>
-              <span>Qtd.</span>
+              <span>Edições</span>
+              <span>Total</span>
             </div>
             <div className="cart-items">
               {cart.data.map((l) => (
                 <CartItem key={`${l.nftId}:${l.edition}`} line={l} />
               ))}
             </div>
-            <form
-              className="coupon-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                apply.mutate();
-              }}
-            >
-              <Field label="Tem um cupom?">
-                <input
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  placeholder="Código do cupom"
-                  aria-describedby={couponError ? "coupon-error" : undefined}
-                  aria-invalid={!!couponError}
-                />
-              </Field>
-              <Button variant="outline" disabled={apply.isPending}>
-                Aplicar
-              </Button>
-              {coupon && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => {
-                    setCoupon("");
-                    setCode("");
-                    setCouponError("");
-                  }}
-                >
-                  Remover cupom
-                </Button>
-              )}
-              {couponError && (
-                <p
-                  className="field-error full-width"
-                  id="coupon-error"
-                  role="alert"
-                >
-                  {couponError}
-                </p>
-              )}
-            </form>
+
             <Link to="/" hash="mercado" className="back-link">
               <ArrowLeft size={14} />
               Continuar explorando
@@ -268,13 +266,65 @@ export function CartPage() {
             />
           ) : (
             quote.data && (
-              <Summary quote={quote.data}>
-                <Button asChild className="w-full">
-                  <Link to="/pagamento">
-                    Continuar para pagamento <ArrowRight size={15} />
-                  </Link>
-                </Button>
-              </Summary>
+              <MobilePurchasePanel className="cart-purchase-panel">
+                <Summary
+                  quote={quote.data}
+                  showItems={false}
+                  title="Resumo da carteira"
+                  beforeTotals={
+                    <form
+                      className="coupon-form"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        apply.mutate();
+                      }}
+                    >
+                      <Field label="Código promocional">
+                        <input
+                          value={code}
+                          onChange={(e) => setCode(e.target.value)}
+                          placeholder="Digite o código promocional..."
+                          aria-describedby={
+                            couponError ? "coupon-error" : undefined
+                          }
+                          aria-invalid={!!couponError}
+                        />
+                      </Field>
+                      <Button variant="outline" disabled={apply.isPending}>
+                        Aplicar
+                      </Button>
+                      {coupon && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => {
+                            setCoupon("");
+                            setCode("");
+                            setCouponError("");
+                          }}
+                        >
+                          Remover cupom
+                        </Button>
+                      )}
+                      {couponError && (
+                        <p
+                          className="field-error full-width"
+                          id="coupon-error"
+                          role="alert"
+                        >
+                          {couponError}
+                        </p>
+                      )}
+                    </form>
+                  }
+                >
+                  <Button asChild className="w-full">
+                    <Link to="/pagamento">
+                      Conectar e finalizar <ArrowRight size={15} />
+                    </Link>
+                  </Button>
+                </Summary>
+              </MobilePurchasePanel>
             )
           )}
         </div>
@@ -319,14 +369,65 @@ export function Checkout() {
   const [connection, setConnection] = useState<
     "idle" | "connected" | "declined"
   >("idle");
+  const [provider, setProvider] = useState("WalletConnect");
+  const [selection, setSelection] = useState<string | null>(null);
+  const [collectorOpen, setCollectorOpen] = useState(
+    () => matchMedia("(min-width: 601px)").matches,
+  );
+  const connect = useMutation({
+    mutationFn: async ({
+      provider: selected,
+      decision,
+    }: {
+      provider: string;
+      decision: "connect" | "decline" | "disconnect";
+    }) =>
+      (
+        await http.post<{
+          status: "connected" | "declined" | "idle";
+          provider: string;
+        }>("/wallets/connection", {
+          walletId,
+          network,
+          provider: selected,
+          decision,
+        })
+      ).data,
+    onSuccess: (result) => {
+      setProvider(result.provider);
+      setSelection(result.status === "connected" ? result.provider : null);
+      setConnection(result.status);
+      setError("");
+      toast(
+        result.status === "connected"
+          ? `${result.provider} conectado na simulação.`
+          : result.status === "declined"
+            ? "Você recusou a conexão simulada."
+            : "Carteira desconectada.",
+      );
+    },
+    onError: (error) => {
+      setSelection(null);
+      setConnection("idle");
+      setError(message(error));
+    },
+  });
   const [review, setReview] = useState<Quote | null>(null);
   const [form, setForm] = useState({ name: "", email: "" });
+  const initializedUser = useRef<string | undefined>(undefined);
+  const [collector, setCollector] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState<Attempt | null>(() =>
     user ? readAttempt(user.id) : null,
   );
   useEffect(() => {
-    if (user) {
+    setSelection(null);
+    setConnection("idle");
+  }, [walletId, network]);
+  useEffect(() => {
+    if (user && initializedUser.current !== user.id) {
+      initializedUser.current = user.id;
       setForm({ name: user.name, email: user.email });
       setAttempt(readAttempt(user.id));
     }
@@ -353,7 +454,14 @@ export function Checkout() {
       const pending = attempt ?? {
         userId: user.id,
         key: crypto.randomUUID(),
-        body: { quoteId: review.id, walletId, network, ...form },
+        body: {
+          quoteId: review.id,
+          walletId,
+          network,
+          provider,
+          ...collector,
+          ...form,
+        },
       };
       setAttempt(pending);
       localStorage.setItem("kurio:attempt", JSON.stringify(pending));
@@ -370,6 +478,10 @@ export function Checkout() {
       void navigate({ to: "/pedido/$id", params: { id: order.id } });
     },
     onError: (e) => {
+      if (axios.isAxiosError(e) && e.response?.data?.fields) {
+        setFieldErrors(e.response.data.fields);
+        setCollectorOpen(true);
+      }
       if (
         axios.isAxiosError(e) &&
         e.response &&
@@ -428,48 +540,177 @@ export function Checkout() {
           </Button>
         </div>
       )}
-      <div className="commerce-layout">
+      <div className="checkout-layout commerce-layout">
         <form
+          id="checkout-form"
+          noValidate
           className="checkout-form"
-          onSubmit={async (e) => {
-            e.preventDefault();
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const values = Object.fromEntries(
+              new FormData(event.currentTarget),
+            ) as Record<string, string>;
+            const invalid = collectorErrors({ ...values, ...form });
+            setFieldErrors(invalid);
+            if (Object.keys(invalid).length) {
+              setCollectorOpen(true);
+              setError(
+                "Corrija os campos indicados no perfil do colecionador antes de continuar.",
+              );
+              const first = event.currentTarget.elements.namedItem(
+                Object.keys(invalid)[0],
+              );
+              requestAnimationFrame(() => {
+                if (first instanceof HTMLElement) {
+                  first.scrollIntoView({ block: "center", behavior: "smooth" });
+                  first.focus();
+                }
+              });
+              return;
+            }
+            const consent =
+              document.querySelector<HTMLInputElement>("#checkout-consent");
+            if (!consent?.checked) {
+              setError(
+                "Marque a confirmação de que esta é uma compra simulada para continuar.",
+              );
+              consent?.focus();
+              return;
+            }
+            setCollector(values);
             setError("");
             try {
               const fresh = await api.quote(coupon);
               setReview(fresh);
-            } catch (e) {
-              setError(message(e));
+            } catch (error) {
+              setError(message(error));
             }
           }}
         >
-          <section>
-            <h2>
-              <span className="step">1</span>Dados do colecionador
-            </h2>
-            <div className="form-grid">
-              <Field label="Nome completo *">
+          <details
+            className="collector-section"
+            open={collectorOpen}
+            onToggle={(event) => setCollectorOpen(event.currentTarget.open)}
+          >
+            <summary>
+              Perfil do colecionador <span>Conferir dados</span>
+            </summary>
+            <div className="form-grid collector-fields">
+              <Field label="Nome completo *" error={fieldErrors.name}>
                 <input
+                  name="name"
                   required
+                  minLength={2}
                   value={form.name}
                   autoComplete="name"
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, name: event.target.value })
+                  }
                 />
               </Field>
-              <Field label="E-mail *">
+              <Field label="Nome de usuário *" error={fieldErrors.username}>
                 <input
+                  name="username"
+                  defaultValue={user.username}
+                  required
+                  pattern="[a-zA-Z0-9._-]{2,30}"
+                />
+              </Field>
+              <Field label="Rede *">
+                <select
+                  aria-label="Rede"
+                  required
+                  value={network}
+                  onChange={(event) => {
+                    setNetwork(event.target.value);
+                    setConnection("idle");
+                  }}
+                >
+                  {["Ethereum", "Polygon", "Solana"].map((item) => (
+                    <option key={item}>{item}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Nome do perfil *" error={fieldErrors.profileName}>
+                <input
+                  name="profileName"
+                  defaultValue={user.name}
+                  required
+                  minLength={2}
+                />
+              </Field>
+              <Field label="Endereço da carteira *">
+                <input
+                  value={
+                    wallets.data?.find((wallet) => wallet.id === walletId)
+                      ?.address ?? ""
+                  }
+                  readOnly
+                  required
+                />
+              </Field>
+              <Field label="ENS ou carteira secundária (opcional)">
+                <input
+                  name="secondaryWallet"
+                  placeholder="ENS ou carteira secundária"
+                />
+              </Field>
+              <Field label="Tipo de carteira *">
+                <select
+                  required
+                  value={provider}
+                  onChange={(event) => {
+                    setProvider(event.target.value);
+                    setConnection("idle");
+                  }}
+                >
+                  {["WalletConnect", "MetaMask", "Coinbase Wallet"].map(
+                    (item) => (
+                      <option key={item}>{item}</option>
+                    ),
+                  )}
+                </select>
+              </Field>
+              <Field
+                label="Código de indicação (opcional)"
+                error={fieldErrors.referral}
+              >
+                <input name="referral" maxLength={50} />
+              </Field>
+              <Field label="E-mail *" error={fieldErrors.email}>
+                <input
+                  name="email"
                   type="email"
                   required
                   value={form.email}
                   autoComplete="email"
-                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  onChange={(event) =>
+                    setForm({ ...form, email: event.target.value })
+                  }
                 />
               </Field>
+              <Field label="Nome ENS (opcional)">
+                <input
+                  name="ens"
+                  defaultValue={user.ens}
+                  placeholder="seunome.eth"
+                />
+              </Field>
+              <Field
+                label="Observação do colecionador (opcional)"
+                error={fieldErrors.note}
+              >
+                <textarea name="note" maxLength={500} rows={6} />
+              </Field>
             </div>
-          </section>
-          <section>
-            <h2>
-              <span className="step">2</span>Carteira e rede
-            </h2>
+          </details>
+          <section className="checkout-wallets">
+            <div className="wallet-section-heading">
+              <h2>Carteira conectada</h2>
+              <Link to="/carteiras" className="text-link">
+                Trocar carteira
+              </Link>
+            </div>
             {wallets.isPending ? (
               <Skeleton cards={1} />
             ) : wallets.isError ? (
@@ -486,132 +727,65 @@ export function Checkout() {
               </p>
             ) : (
               <>
-                <div className="form-grid">
-                  <Field label="Carteira">
-                    <select
-                      value={walletId}
-                      onChange={(e) => {
-                        const w = wallets.data.find(
-                          (w) => w.id === e.target.value,
-                        )!;
-                        setWalletId(w.id);
-                        setNetwork(w.network);
-                        setConnection("idle");
-                      }}
+                <div
+                  className="wallet-choices"
+                  role="radiogroup"
+                  aria-label="Selecionar carteira cadastrada"
+                >
+                  {wallets.data.map((wallet) => (
+                    <label
+                      key={wallet.id}
+                      className={`wallet-choice ${walletId === wallet.id ? "selected" : ""}`}
                     >
-                      {wallets.data.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.label}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Rede">
-                    <select
-                      value={network}
-                      onChange={(e) => {
-                        setNetwork(e.target.value);
-                        setConnection("idle");
-                      }}
-                    >
-                      {["Ethereum", "Polygon", "Solana"].map((n) => (
-                        <option key={n}>{n}</option>
-                      ))}
-                    </select>
-                  </Field>
+                      <input
+                        type="radio"
+                        name="saved-wallet"
+                        value={wallet.id}
+                        checked={walletId === wallet.id}
+                        onChange={() => {
+                          setWalletId(wallet.id);
+                          setNetwork(wallet.network);
+                          setConnection("idle");
+                        }}
+                      />
+                      <span>
+                        <strong>
+                          {wallet.primary ? "Principal" : wallet.label}
+                        </strong>
+                        <small>
+                          {wallet.address.slice(0, 8)}…
+                          {wallet.address.slice(-4)}
+                        </small>
+                        <small>Rede {wallet.network}</small>
+                      </span>
+                      <Wallet size={17} />
+                    </label>
+                  ))}
                 </div>
-                <div className="wallet-connect">
-                  <Wallet size={24} />
-                  <div>
-                    <strong>
-                      {connection === "connected"
-                        ? "Carteira conectada"
-                        : connection === "declined"
-                          ? "Conexão recusada"
-                          : "Conecte sua carteira"}
-                    </strong>
-                    <p className="muted">
-                      {wallets.data
-                        .find((w) => w.id === walletId)
-                        ?.address.slice(0, 14)}
-                      … · simulação
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      if (
-                        wallets.data.find((w) => w.id === walletId)?.network !==
-                        network
-                      ) {
-                        setError(
-                          "A rede selecionada deve corresponder à rede da carteira.",
-                        );
-                        return;
-                      }
-                      setConnection(
-                        connection === "connected" ? "idle" : "connected",
-                      );
-                      setError("");
-                      toast(
-                        connection === "connected"
-                          ? "Carteira desconectada."
-                          : "Carteira conectada na simulação.",
-                      );
+                <Field label="Carteira">
+                  <select
+                    value={walletId}
+                    onChange={(event) => {
+                      const wallet = wallets.data.find(
+                        (item) => item.id === event.target.value,
+                      )!;
+                      setWalletId(wallet.id);
+                      setNetwork(wallet.network);
+                      setConnection("idle");
                     }}
                   >
-                    {connection === "connected"
-                      ? "Desconectar"
-                      : "Conectar carteira"}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => {
-                      setConnection("declined");
-                      toast("Você recusou a conexão simulada.");
-                    }}
-                  >
-                    Simular recusa
-                  </Button>
-                </div>
+                    {wallets.data.map((wallet) => (
+                      <option key={wallet.id} value={wallet.id}>
+                        {wallet.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
               </>
             )}
           </section>
-          <section>
-            <h2>
-              <span className="step">3</span>Revise e confirme
-            </h2>
-            <p className="muted mb-5">
-              Os valores e a disponibilidade serão consultados novamente antes
-              da compra.
-            </p>
-            <label className="check-label mb-5">
-              <input type="checkbox" required />
-              Entendo que esta é uma compra simulada, sem valor financeiro.
-            </label>
-            {error && (
-              <p className="form-error mb-4" role="alert">
-                {error}
-              </p>
-            )}
-            <Button
-              type="submit"
-              disabled={
-                connection !== "connected" ||
-                !quote.data ||
-                !!attempt ||
-                quote.isFetching
-              }
-            >
-              Revisar pedido <ArrowRight size={15} />
-            </Button>
-          </section>
         </form>
-        <div>
+        <div className="checkout-payment">
           {quote.isPending ? (
             <Skeleton cards={1} />
           ) : quote.isError ? (
@@ -622,11 +796,109 @@ export function Checkout() {
           ) : (
             quote.data && <Summary quote={quote.data} />
           )}
-          <p className="simulation-note mt-4">
-            Cupom demonstrativo disponível: KURIO10
+          <fieldset className="payment-providers">
+            <legend>
+              <h2>Carteira e rede</h2>
+            </legend>
+            {["WalletConnect", "MetaMask", "Coinbase Wallet"].map(
+              (item, index) => (
+                <label
+                  className={`provider-option ${connection === "connected" && provider === item ? "selected" : ""}`}
+                  key={item}
+                >
+                  <input
+                    type="radio"
+                    name="payment-provider"
+                    value={item}
+                    checked={selection === item}
+                    disabled={
+                      connect.isPending || !walletId || wallets.isPending
+                    }
+                    onChange={() => {
+                      setSelection(item);
+                      connect.mutate({ provider: item, decision: "connect" });
+                    }}
+                  />
+                  <span className="provider-symbol" aria-hidden="true">
+                    {index === 2 ? <Wallet size={21} /> : item[0]}
+                  </span>
+                  <span>{item}</span>
+                </label>
+              ),
+            )}
+          </fieldset>
+          <div className="connection-actions">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={connect.isPending || !walletId || wallets.isPending}
+              onClick={() =>
+                connect.mutate({
+                  provider,
+                  decision:
+                    connection === "connected" ? "disconnect" : "connect",
+                })
+              }
+            >
+              {connection === "connected" ? "Desconectar" : "Conectar carteira"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={connect.isPending || !walletId || wallets.isPending}
+              onClick={() => connect.mutate({ provider, decision: "decline" })}
+            >
+              Simular recusa
+            </Button>
+          </div>
+          <p className="connection-feedback" aria-live="polite">
+            {connection === "connected"
+              ? `${provider} · Carteira conectada`
+              : connection === "declined"
+                ? "Conexão recusada. Escolha uma carteira para tentar novamente."
+                : "Selecione um método para conectar sua carteira simulada."}
+          </p>
+          {quote.data && (
+            <p className="mobile-payment-total">
+              Total: <strong>{eth(quote.data.total)}</strong>
+            </p>
+          )}
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="checkout-consent">
+            <label className="check-label">
+              <input
+                id="checkout-consent"
+                type="checkbox"
+                required
+                form="checkout-form"
+              />
+              Entendo que esta é uma compra simulada, sem valor financeiro.
+            </label>
+          </div>
+          <Button
+            className="checkout-review w-full"
+            form="checkout-form"
+            type="submit"
+            disabled={
+              connect.isPending ||
+              connection !== "connected" ||
+              !quote.data ||
+              !!attempt ||
+              quote.isFetching
+            }
+          >
+            Confirmar compra <ArrowRight size={15} />
+          </Button>
+          <p className="simulation-note">
+            Revise antes de confirmar · sem cobrança real
           </p>
         </div>
       </div>
+
       <Dialog
         open={!!review}
         onOpenChange={(open) => {
@@ -687,6 +959,7 @@ export function Checkout() {
   );
 }
 export function OrderPage() {
+  const [explorer, setExplorer] = useState(false);
   const { id } = useParams({ strict: false });
   const { data: user } = useSession();
   const order = useQuery({
@@ -714,6 +987,9 @@ export function OrderPage() {
   const o = order.data;
   return (
     <section className="receipt">
+      <Link to="/" className="receipt-close" aria-label="Fechar recibo">
+        ×
+      </Link>
       <div className={`receipt-icon ${o.status}`}>
         {o.status === "confirmed" ? (
           <CheckCircle2 size={44} />
@@ -726,7 +1002,7 @@ export function OrderPage() {
       <p className="eyebrow">KURIO COLLECTORS CLUB</p>
       <h1>
         {o.status === "confirmed"
-          ? "Sua coleção ganhou uma nova história."
+          ? "Seus NFTs agora estão na sua carteira"
           : o.status === "declined"
             ? "Não foi possível concluir o pagamento."
             : "Seu pedido está sendo processado."}
@@ -739,10 +1015,30 @@ export function OrderPage() {
             : "Você pode recarregar esta página. O pedido será recuperado sem criar outra compra."}
       </p>
       <div className="receipt-meta">
-        <span>Pedido #{o.id.slice(0, 8)}</span>
-        <span>{new Date(o.createdAt).toLocaleDateString("pt-BR")}</span>
+        <span>
+          <small>
+            {o.status === "confirmed" ? "ID da transação" : "Pedido"}
+          </small>
+          {o.status === "confirmed"
+            ? `${o.transaction.slice(0, 8)}…${o.transaction.slice(-4)}`
+            : o.id.slice(0, 8)}
+        </span>
+        <span>
+          <small>Data</small>
+          {new Date(o.createdAt).toLocaleDateString("pt-BR")}
+        </span>
+        <span>
+          <small>Total</small>
+          {eth(o.quote.total)}
+        </span>
+        {o.payment && (
+          <span>
+            <small>Carteira e rede</small>
+            {o.payment.provider} · {o.payment.network}
+          </span>
+        )}
       </div>
-      <Summary quote={o.quote} />
+      <Summary quote={o.quote} title="Detalhes da transação" />
       {o.status === "confirmed" && (
         <div className="transaction">
           <Check size={16} />
@@ -753,6 +1049,9 @@ export function OrderPage() {
         </div>
       )}
       <div className="flex justify-center gap-3 flex-wrap mt-7">
+        {o.status === "confirmed" && (
+          <Button onClick={() => setExplorer(true)}>Ver no Etherscan</Button>
+        )}
         <Button asChild>
           <Link to="/">
             Continuar explorando <ArrowRight size={15} />
@@ -767,6 +1066,25 @@ export function OrderPage() {
           <Link to="/pedidos">Meus pedidos</Link>
         </Button>
       </div>
+      <Dialog
+        open={explorer}
+        onOpenChange={setExplorer}
+        title="Explorador de transação simulado"
+        description="Esta referência é fictícia e não corresponde a uma transação real no Etherscan."
+      >
+        <dl className="explorer-details">
+          <dt>Referência</dt>
+          <dd>
+            <code>{o.transaction}</code>
+          </dd>
+          <dt>Estado do pedido</dt>
+          <dd>{o.status === "confirmed" ? "Confirmado" : o.status}</dd>
+          <dt>Rede</dt>
+          <dd>{o.payment?.network ?? "Simulada"}</dd>
+          <dt>Total do recibo</dt>
+          <dd>{eth(o.quote.total)}</dd>
+        </dl>
+      </Dialog>
     </section>
   );
 }

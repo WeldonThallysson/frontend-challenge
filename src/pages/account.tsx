@@ -1,3 +1,4 @@
+import { parseUser } from "../lib/session";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -10,11 +11,17 @@ import {
   Package,
   Check,
   Plus,
+  Eye,
+  EyeOff,
+  ImagePlus,
 } from "lucide-react";
-import { api, http, message, queryClient, useSession } from "../api";
-import { eth, networks, type Order, type User, type Wallet } from "../domain";
+import { api, http, logout, message, queryClient, useSession } from "../api";
+import { categories, defaultSearch, eth, networks } from "../domain";
+import type { Order, User, Wallet } from "../types";
 import { useToast } from "../shell";
 import { Button } from "../components/ui/button";
+import { Dialog } from "../components/ui/dialog";
+import { PasswordField } from "../components/password-field";
 import {
   Empty,
   ErrorState,
@@ -27,10 +34,17 @@ export function AuthPage({ register = false }: { register?: boolean }) {
   const navigate = useNavigate();
   const toast = useToast();
   const [error, setError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [help, setHelp] = useState("");
+  const backdrop = useQuery({
+    queryKey: ["catalog", "auth-backdrop"],
+    queryFn: ({ signal }) => api.catalog(defaultSearch, signal),
+    enabled: matchMedia("(min-width: 601px)").matches,
+  });
   const mutation = useMutation({
     mutationFn: async (data: Record<string, string>) => {
       if (register) await http.post("/register", data);
-      return (await http.post<User>("/login", data)).data;
+      return parseUser((await http.post<unknown>("/login", data)).data);
     },
     onSuccess: async (user) => {
       queryClient.clear();
@@ -58,15 +72,15 @@ export function AuthPage({ register = false }: { register?: boolean }) {
     mutation.mutate(values);
   };
   return (
-    <section className="auth-layout">
+    <section
+      className={`auth-layout ${register ? "auth-register" : "auth-login"}`}
+    >
       <div className="auth-story">
         <p className="eyebrow">Seu próximo capítulo começa aqui</p>
         <h1>
-          SEJA DONO DO
+          SEJA DONO DO FUTURO
           <br />
-          SEU UNIVERSO
-          <br />
-          <span>DIGITAL.</span>
+          DA ARTE DIGITAL
         </h1>
         <p className="muted">
           Colecione o extraordinário.
@@ -80,9 +94,45 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           height="640"
         />
       </div>
+      <aside className="auth-backdrop-sidebar" aria-hidden="true">
+        <h3>Coleções</h3>
+        {categories.map((category) => (
+          <p key={category}>{category}</p>
+        ))}
+        <h3>Faixa de preço</h3>
+        <div className="decorative-range" />
+        <small>Preço: 0,02 – 12,30 ETH</small>
+        <h3>Rede</h3>
+        {networks.map((network) => (
+          <p key={network}>{network}</p>
+        ))}
+      </aside>
+      <div className="auth-backdrop-grid" aria-hidden="true">
+        {backdrop.data?.items.map((nft) => (
+          <div key={nft.id}>
+            <img src={nft.image} alt="" />
+            <p>{nft.name}</p>
+            <span>{eth(nft.price)}</span>
+          </div>
+        ))}
+      </div>
       <div className="auth-form-panel">
-        <p className="eyebrow">KURIO COLLECTORS CLUB</p>
-        <h2>{register ? "Crie sua conta" : "Bem-vindo de volta"}</h2>
+        <Link className="auth-close" to="/" aria-label="Fechar formulário">
+          ×
+        </Link>
+        <nav className="auth-tabs" aria-label="Acesso à conta">
+          <Link to="/login" className={!register ? "active" : ""}>
+            Entrar
+          </Link>
+          <span> | </span>
+          <Link to="/cadastro" className={register ? "active" : ""}>
+            Criar conta
+          </Link>
+        </nav>
+        <Link to="/" className="auth-brand" aria-label="Voltar ao início">
+          KURIO
+        </Link>
+        <h2>{register ? "Criar perfil de colecionador" : "Entrar"}</h2>
         <p className="muted">
           {register
             ? "Seu primeiro passo para uma coleção única."
@@ -91,7 +141,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
         <form onSubmit={submit} className="form-stack">
           {register && (
             <Field label="Nome completo">
-              <input name="name" autoComplete="name" required minLength={2} />
+              <input
+                name="name"
+                placeholder="Nome de exibição"
+                autoComplete="name"
+                required
+                minLength={2}
+              />
             </Field>
           )}
           <Field label="E-mail">
@@ -103,17 +159,36 @@ export function AuthPage({ register = false }: { register?: boolean }) {
               placeholder="voce@exemplo.com"
             />
           </Field>
-          <Field label="Senha">
-            <input
-              name="password"
-              type="password"
-              autoComplete={register ? "new-password" : "current-password"}
-              required
-              minLength={8}
-              pattern={register ? "(?=.*[A-Z])(?=.*[0-9]).{8,}" : undefined}
-              aria-describedby={register ? "password-help" : undefined}
-            />
-          </Field>
+          <div className="password-input">
+            <Field label="Senha">
+              <input
+                name="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Senha"
+                autoComplete={register ? "new-password" : "current-password"}
+                required
+                minLength={8}
+                pattern={register ? "(?=.*[A-Z])(?=.*[0-9]).{8,}" : undefined}
+                aria-describedby={register ? "password-help" : undefined}
+              />
+            </Field>
+            <button
+              type="button"
+              aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <Eye size={17} /> : <EyeOff size={17} />}
+            </button>
+          </div>
+          {!register && (
+            <button
+              type="button"
+              className="forgot-password"
+              onClick={() => setHelp("Recuperação de senha")}
+            >
+              Esqueceu a senha?
+            </button>
+          )}
           {register && (
             <>
               <small id="password-help" className="muted">
@@ -125,6 +200,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
                   type="password"
                   autoComplete="new-password"
                   required
+                  placeholder="Confirmar senha"
                   minLength={8}
                 />
               </Field>
@@ -144,10 +220,30 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             <ArrowRight size={16} />
           </Button>
         </form>
+        <div className="social-login">
+          <p>
+            <span>Ou continue com</span>
+          </p>
+          <Button variant="outline" onClick={() => setHelp("Login com Google")}>
+            <span className="google-symbol" aria-hidden="true">
+              G
+            </span>
+            Continuar com Google
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setHelp("Login com Facebook")}
+          >
+            <span className="facebook-symbol" aria-hidden="true">
+              f
+            </span>
+            Continuar com Facebook
+          </Button>
+        </div>
         <p className="auth-switch">
-          {register ? "Já tem uma conta?" : "Ainda não tem uma conta?"}{" "}
+          {register ? "Já tem uma conta?" : "Novo na Kurio?"}{" "}
           <Link to={register ? "/login" : "/cadastro"}>
-            {register ? "Entre aqui" : "Cadastre-se"}
+            {register ? "Entre aqui" : "Crie uma conta"}
           </Link>
         </p>
         <div className="demo-credentials">
@@ -156,6 +252,21 @@ export function AuthPage({ register = false }: { register?: boolean }) {
           <small>Use apenas dados fictícios nesta aplicação.</small>
         </div>
       </div>
+      <Dialog
+        open={!!help}
+        onOpenChange={(open) => !open && setHelp("")}
+        title={help}
+        description="Esta ação não faz parte da simulação do desafio."
+      >
+        <p>
+          Use o cadastro e o login por e-mail para acessar sua conta
+          demonstrativa. Para testar, entre com ana@kurio.demo e a senha
+          Kurio123!.
+        </p>
+        <Button className="mt-5 w-full" onClick={() => setHelp("")}>
+          Entendi
+        </Button>
+      </Dialog>
     </section>
   );
 }
@@ -184,15 +295,34 @@ export function AccountLayout({
           <Package size={15} />
           Meus pedidos
         </Link>
+        <button
+          onClick={() =>
+            toast("Atividade está fora do escopo desta demonstração.")
+          }
+        >
+          <Package size={15} />
+          Atividade
+        </button>
         <Link to="/" search={(s) => ({ ...s, favorites: true })}>
           <Heart size={15} />
           Lista de interesse
         </Link>
+        {["Ofertas", "Arquivos baixados", "Suporte"].map((label) => (
+          <button
+            key={label}
+            onClick={() =>
+              toast(
+                `${label}: funcionalidade fora do escopo desta demonstração.`,
+              )
+            }
+          >
+            <Plus size={15} />
+            {label}
+          </button>
+        ))}
         <button
           onClick={async () => {
-            await http.post("/logout");
-            queryClient.clear();
-            localStorage.removeItem("kurio:attempt");
+            await logout();
             void navigate({ to: "/" });
             toast("Você saiu da sua conta.");
           }}
@@ -224,7 +354,9 @@ function ProfileForm({ user }: { user: User }) {
   const [passwordError, setPasswordError] = useState("");
   const save = useMutation({
     mutationFn: async (data: Record<string, string>) =>
-      (await http.patch<User>("/profile", { ...data, avatar })).data,
+      parseUser(
+        (await http.patch<unknown>("/profile", { ...data, avatar })).data,
+      ),
     onSuccess: (u) => {
       queryClient.setQueryData(["session"], u);
       toast("Perfil atualizado com sucesso.");
@@ -268,7 +400,7 @@ function ProfileForm({ user }: { user: User }) {
             name="username"
             defaultValue={user.username}
             required
-            pattern="[a-zA-Z0-9_-]{2,30}"
+            pattern="[a-zA-Z0-9._-]{2,30}"
           />
         </Field>
         <Field label="E-mail *">
@@ -289,7 +421,13 @@ function ProfileForm({ user }: { user: User }) {
         <div className="avatar-field">
           <span>Avatar</span>
           <div>
-            <img src={avatar} width="56" height="56" alt="Seu avatar" />
+            {avatar ? (
+              <img src={avatar} width="56" height="56" alt="Seu avatar" />
+            ) : (
+              <span className="avatar-placeholder" aria-label="Sem avatar">
+                <ImagePlus size={22} />
+              </span>
+            )}
             <label className="upload-button">
               Alterar
               <input
@@ -318,7 +456,7 @@ function ProfileForm({ user }: { user: User }) {
               variant="ghost"
               size="sm"
               type="button"
-              onClick={() => setAvatar("/assets/ape-1.webp")}
+              onClick={() => setAvatar("")}
             >
               Remover
             </Button>
@@ -353,34 +491,31 @@ function ProfileForm({ user }: { user: User }) {
             );
           }}
         >
-          <Field label="Senha atual">
-            <input
-              name="currentPassword"
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </Field>
+          <PasswordField
+            label="Senha atual"
+            name="currentPassword"
+
+            autoComplete="current-password"
+            required
+          />
           <div />
-          <Field label="Nova senha">
-            <input
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              required
-              pattern="(?=.*[A-Z])(?=.*[0-9]).{8,}"
-            />
-          </Field>
-          <Field label="Confirmar nova senha">
-            <input
-              name="confirmPassword"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              required
-            />
-          </Field>
+          <PasswordField
+            label="Nova senha"
+            name="password"
+
+            autoComplete="new-password"
+            minLength={8}
+            required
+            pattern="(?=.*[A-Z])(?=.*[0-9]).{8,}"
+          />
+          <PasswordField
+            label="Confirmar nova senha"
+            name="confirmPassword"
+
+            autoComplete="new-password"
+            minLength={8}
+            required
+          />
           {passwordError && (
             <p className="form-error full-width" role="alert">
               {passwordError}
@@ -401,16 +536,20 @@ export function Wallets() {
     queryFn: ({ signal }) => api.wallets(signal),
     enabled: !!user,
   });
-  const [editing, setEditing] = useState<Wallet | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState("");
   const toast = useToast();
+  const selected = adding
+    ? undefined
+    : (query.data?.find((wallet) => wallet.id === editingId) ??
+      query.data?.find((wallet) => wallet.primary));
   const mutation = useMutation({
     mutationFn: async (data: Record<string, string>) =>
       (
         await http.post<Wallet[]>("/wallets", {
           ...data,
-          id: editing?.id,
+          id: selected?.id,
           primary: data.primary === "on",
         })
       ).data,
@@ -418,134 +557,217 @@ export function Wallets() {
       queryClient.setQueryData(["private", user?.id, "wallets"], wallets);
       void queryClient.invalidateQueries({ queryKey: ["session"] });
       setAdding(false);
-      setEditing(null);
+      setEditingId(null);
+      setError("");
       toast("Carteira salva com sucesso.");
     },
-    onError: (e) => setError(message(e)),
+    onError: (error) => setError(message(error)),
   });
   return (
-    <AccountLayout title="Suas carteiras">
-      <p className="muted mb-6">
-        Gerencie suas carteiras para colecionar com tranquilidade.
+    <AccountLayout
+      title={
+        adding
+          ? "Cadastrar carteira"
+          : selected?.primary
+            ? "Carteira principal"
+            : "Editar carteira"
+      }
+    >
+      <p className="wallet-description muted">
+        Estas carteiras ficam disponíveis no pagamento e para receber NFTs
+        comprados.
       </p>
+      <Button
+        className="wallet-add"
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          setAdding(true);
+          setEditingId(null);
+          setError("");
+        }}
+      >
+        <Plus size={14} />
+        Adicionar carteira
+      </Button>
       {query.isPending ? (
         <Skeleton cards={1} />
       ) : query.isError ? (
         <ErrorState error={query.error} retry={() => void query.refetch()} />
       ) : (
-        <div className="wallet-list">
-          {query.data.map((w) => (
-            <article className="wallet-card" key={w.id}>
-              <WalletIcon size={25} />
-              <div>
-                <h2>
-                  {w.label}{" "}
-                  {w.primary && <span className="badge">Principal</span>}
-                </h2>
-                <p>{w.network}</p>
-                <code>{w.address}</code>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setEditing(w);
-                  setAdding(true);
-                  setError("");
-                }}
+        <>
+          <form
+            key={selected?.id ?? "new"}
+            className="wallet-editor form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setError("");
+              mutation.mutate(
+                Object.fromEntries(new FormData(event.currentTarget)) as Record<
+                  string,
+                  string
+                >,
+              );
+            }}
+          >
+            <Field label="Nome de exibição *">
+              <input
+                name="displayName"
+                defaultValue={selected?.displayName ?? user?.name}
+                required
+                minLength={2}
+              />
+            </Field>
+            <Field label="Apelido da carteira">
+              <input name="label" required defaultValue={selected?.label} />
+            </Field>
+            <Field label="Rede">
+              <select
+                name="network"
+                aria-label="Rede"
+                defaultValue={selected?.network ?? "Ethereum"}
               >
-                Editar
-              </Button>
-            </article>
-          ))}
-        </div>
-      )}
-      {!adding ? (
-        <Button
-          className="mt-6"
-          onClick={() => {
-            setEditing(null);
-            setAdding(true);
-            setError("");
-          }}
-        >
-          <Plus size={15} />
-          Adicionar carteira
-        </Button>
-      ) : (
-        <form
-          key={editing?.id ?? "new"}
-          className="form-grid mt-8"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setError("");
-            mutation.mutate(
-              Object.fromEntries(new FormData(e.currentTarget)) as Record<
-                string,
-                string
-              >,
-            );
-          }}
-        >
-          <Field label="Apelido da carteira">
-            <input name="label" required defaultValue={editing?.label} />
-          </Field>
-          <Field label="Rede">
-            <select
-              name="network"
-              defaultValue={editing?.network ?? "Ethereum"}
-            >
-              {networks.map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-            </select>
-          </Field>
-          <div className="full-width">
+                {networks.map((network) => (
+                  <option key={network}>{network}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Nome do perfil *">
+              <input
+                name="profileName"
+                defaultValue={selected?.profileName ?? user?.username}
+                required
+                minLength={2}
+              />
+            </Field>
             <Field label="Endereço simulado">
               <input
                 name="address"
                 required
-                defaultValue={editing?.address}
+                defaultValue={selected?.address}
                 pattern="0x[a-fA-F0-9]{40}"
-                placeholder="0x + 40 caracteres hexadecimais"
+                placeholder="Endereço 0x da carteira"
               />
             </Field>
-          </div>
-          <label className="check-label full-width">
-            <input
-              type="checkbox"
-              name="primary"
-              defaultChecked={editing?.primary}
-            />
-            Definir como principal
-          </label>
-          {error && (
-            <p role="alert" className="form-error full-width">
-              {error}
-            </p>
-          )}
-          <div className="flex gap-3 full-width">
-            <Button disabled={mutation.isPending}>
-              <Check size={15} />
-              Salvar carteira
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setAdding(false)}
-            >
-              Cancelar
-            </Button>
-          </div>
-        </form>
+            <Field label="ENS ou carteira secundária (opcional)">
+              <input
+                name="secondaryWallet"
+                defaultValue={selected?.secondaryWallet}
+                placeholder="ENS ou carteira secundária (opcional)"
+              />
+            </Field>
+            <Field label="Tipo de carteira">
+              <select
+                name="provider"
+                aria-label="Tipo de carteira"
+                defaultValue={selected?.provider ?? "WalletConnect"}
+              >
+                {["WalletConnect", "MetaMask", "Coinbase Wallet"].map(
+                  (provider) => (
+                    <option key={provider}>{provider}</option>
+                  ),
+                )}
+              </select>
+            </Field>
+            <Field label="Código de indicação (opcional)">
+              <input
+                name="referral"
+                defaultValue={selected?.referral}
+                maxLength={50}
+              />
+            </Field>
+            <Field label="E-mail *">
+              <input
+                name="email"
+                type="email"
+                defaultValue={selected?.email ?? user?.email}
+                required
+              />
+            </Field>
+            <Field label="Nome ENS">
+              <input
+                name="ens"
+                defaultValue={selected?.ens ?? user?.ens}
+                placeholder="seunome.eth"
+              />
+            </Field>
+            <label className="check-label full-width">
+              <input
+                type="checkbox"
+                name="primary"
+                defaultChecked={selected?.primary ?? !query.data.length}
+              />
+              Definir como principal
+            </label>
+            {error && (
+              <p role="alert" className="form-error full-width">
+                {error}
+              </p>
+            )}
+            <div className="flex gap-3 full-width">
+              <Button disabled={mutation.isPending}>
+                <Check size={15} />
+                Salvar carteira
+              </Button>
+              {(adding || editingId) && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setAdding(false);
+                    setEditingId(null);
+                    setError("");
+                  }}
+                >
+                  Cancelar
+                </Button>
+              )}
+            </div>
+          </form>
+          <section className="secondary-wallets">
+            <h2>Carteira secundária</h2>
+            {query.data.some((wallet) => !wallet.primary) ? (
+              <div className="wallet-list">
+                {query.data
+                  .filter((wallet) => !wallet.primary)
+                  .map((wallet) => (
+                    <article className="wallet-card" key={wallet.id}>
+                      <WalletIcon size={24} />
+                      <div>
+                        <h2>{wallet.label}</h2>
+                        <p>{wallet.network}</p>
+                        <code>{wallet.address}</code>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingId(wallet.id);
+                          setAdding(false);
+                          setError("");
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                      >
+                        Editar
+                      </Button>
+                    </article>
+                  ))}
+              </div>
+            ) : (
+              <p className="muted">
+                Você ainda não adicionou uma carteira secundária.
+              </p>
+            )}
+          </section>
+        </>
       )}
       <p className="simulation-note mt-8">
-        Carteiras e conexões são simuladas. Não use endereços ou credenciais
-        reais.
+        Endereços fictícios · nenhuma extensão ou carteira real é necessária.
       </p>
     </AccountLayout>
   );
 }
+
 export function Orders() {
   const { data: user } = useSession();
   const query = useQuery({

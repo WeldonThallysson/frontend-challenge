@@ -10,39 +10,31 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  Heart,
   SlidersHorizontal,
   Search,
-  ShoppingBag,
+  ShoppingCart,
+  Plus,
   Check,
   ArrowUpRight,
 } from "lucide-react";
-import {
-  api,
-  http,
-  invalidateCommerce,
-  message,
-  queryClient,
-  useSession,
-} from "../api";
+import { api, http, invalidateCommerce, message, useSession } from "../api";
+import { MobilePurchasePanel } from "../components/mobile-purchase-panel";
 import {
   categories,
   defaultSearch,
   eth,
+  fromWei,
+  toWei,
   networks,
-  type CatalogSearch,
-  type NFT,
 } from "../domain";
+import type { CatalogSearch, NFT } from "../types";
 import { useToast } from "../shell";
 import { Button } from "../components/ui/button";
 import { Dialog } from "../components/ui/dialog";
-import {
-  Empty,
-  ErrorState,
-  Field,
-  PageTitle,
-  Skeleton,
-} from "../components/shared";
+import { FavoriteButton } from "../components/favorite-button";
+import { artworkSources } from "../lib/artwork";
+import { Empty, ErrorState, Field, Skeleton } from "../components/shared";
+
 export function NFTCard({
   nft,
   priority = false,
@@ -52,9 +44,12 @@ export function NFTCard({
 }) {
   return (
     <article className="nft-card">
+      <FavoriteButton id={nft.id} name={nft.name} compact />
       <Link to="/nft/$id" params={{ id: nft.id }} className="nft-art">
         <img
           src={nft.image}
+          srcSet={artworkSources(nft.image)}
+          sizes="(max-width: 600px) calc((100vw - 64px) / 2), (max-width: 900px) 35vw, 280px"
           width="640"
           height="640"
           loading={priority ? "eager" : "lazy"}
@@ -65,6 +60,7 @@ export function NFTCard({
           <ArrowUpRight size={18} />
         </span>
         {nft.stock === 0 && <span className="sold-out">Esgotado</span>}
+        {nft.rarity && <span className="rarity-badge">{nft.rarity}</span>}
       </Link>
       <div className="nft-caption">
         <Link to="/nft/$id" params={{ id: nft.id }}>
@@ -170,15 +166,23 @@ export function Home() {
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">Bem-vindo à Kurio</p>
-          <h1>
+          <h1 className="hero-desktop-title">
             SEJA DONO DO FUTURO
             <br />
             DA ARTE DIGITAL
           </h1>
-          <p className="muted">
+          <h1 className="hero-mobile-title">
+            SEJA DONO DA
+            <br />
+            CULTURA DIGITAL
+          </h1>
+          <p className="muted hero-desktop-description">
             Descubra NFTs selecionados de criadores emergentes e consagrados.
             Colecione arte digital rara, apoie artistas e tenha uma parte da
             cultura de amanhã.
+          </p>
+          <p className="muted hero-mobile-description">
+            Descubra NFTs selecionados de criadores do mundo todo.
           </p>
           <Button asChild>
             <a href="#mercado">
@@ -194,10 +198,19 @@ export function Home() {
         <Link to="/nft/$id" params={{ id: "nft-1" }} className="hero-art">
           <img
             src="/assets/ape-1.webp"
+            srcSet={artworkSources("/assets/ape-1.webp")}
+            sizes="(max-width: 600px) 140px, (max-width: 900px) 35vw, 450px"
             width="640"
             height="640"
             fetchPriority="high"
             alt="Emerald Ape, primata de jaqueta verde e óculos de sol"
+          />
+          <img
+            className="hero-mini-art"
+            src="/assets/ape-2.webp"
+            alt=""
+            width="90"
+            height="90"
           />
         </Link>
       </section>
@@ -236,7 +249,13 @@ export function Home() {
                 Novos lançamentos
               </button>
               <button
-                className={search.favorites ? "active" : ""}
+                className="trending-tab"
+                onClick={() => update({ sort: "price-desc", favorites: false })}
+              >
+                Em alta
+              </button>
+              <button
+                className={`favorites-tab ${search.favorites ? "active" : ""}`}
                 onClick={() =>
                   user
                     ? update({ favorites: !search.favorites })
@@ -266,6 +285,7 @@ export function Home() {
           <div className="catalog-search-row">
             <form
               role="search"
+              id="catalog-search-form"
               onSubmit={(e) => {
                 e.preventDefault();
                 update({ q });
@@ -275,11 +295,16 @@ export function Home() {
               <input
                 id="catalog-search"
                 aria-label="Buscar NFTs"
-                placeholder="Encontre sua próxima coleção"
+                placeholder="Explorar coleções"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
-              <Button size="sm" variant="ghost" type="submit">
+              <Button
+                size="sm"
+                variant="ghost"
+                type="submit"
+                aria-label="Buscar"
+              >
                 Buscar
               </Button>
             </form>
@@ -473,6 +498,17 @@ export function Home() {
         title="Filtrar coleções"
         description="Combine categoria, preço e rede."
       >
+        <Field label="Ordenar resultados">
+          <select
+            value={search.sort}
+            onChange={(event) => update({ sort: event.target.value })}
+          >
+            <option value="recent">Listados recentemente</option>
+            <option value="price-asc">Menor preço</option>
+            <option value="price-desc">Maior preço</option>
+            <option value="name">Nome A–Z</option>
+          </select>
+        </Field>
         <div className="filter-panel mobile-filter-panel">{filterContent}</div>
         <Button className="mt-5 w-full" onClick={() => setFilters(false)}>
           Ver resultados
@@ -485,50 +521,15 @@ export function Detail() {
   const { id } = useParams({ strict: false });
   const navigate = useNavigate();
   const toast = useToast();
-  const { data: user, isPending: sessionPending } = useSession();
+
   const [quantity, setQuantity] = useState(1);
   const [edition, setEdition] = useState("original");
   const [gallery, setGallery] = useState(0);
+  const [preview, setPreview] = useState(false);
+  const [tab, setTab] = useState<"details" | "reviews">("details");
   const query = useQuery({
     queryKey: ["nft", id],
     queryFn: ({ signal }) => api.nft(id!, signal),
-  });
-  const favorites = useQuery({
-    queryKey: ["private", user?.id, "favorites"],
-    queryFn: async () => (await http.get<string[]>("/favorites")).data,
-    enabled: !!user,
-  });
-  const favorite = favorites.data?.includes(id!) ?? false;
-  const toggle = useMutation({
-    mutationFn: async (desired: boolean) => {
-      if (!user) {
-        void navigate({ to: "/login", search: { returnTo: `/nft/${id}` } });
-        return;
-      }
-      await http[desired ? "post" : "delete"](`/favorites/${id}`);
-    },
-    onMutate: async (desired: boolean) => {
-      if (!user) return;
-      const key = ["private", user.id, "favorites"];
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<string[]>(key);
-      queryClient.setQueryData(
-        key,
-        desired
-          ? [...(previous ?? []), id!]
-          : previous?.filter((x) => x !== id),
-      );
-      return { previous, key };
-    },
-    onError: (e, _v, context) => {
-      if (context) queryClient.setQueryData(context.key, context.previous);
-      toast(message(e));
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({
-        queryKey: ["private", user?.id, "favorites"],
-      });
-    },
   });
   const add = useMutation({
     mutationFn: async () => {
@@ -591,6 +592,15 @@ export function Detail() {
       </div>
       <section className="detail-layout">
         <div className="gallery">
+          <Button
+            className="gallery-zoom"
+            size="icon"
+            variant="ghost"
+            aria-label="Ampliar imagem do NFT"
+            onClick={() => setPreview(true)}
+          >
+            <Search size={22} />
+          </Button>
           <div className="thumbnails">
             {[0, 1, 2, 3].map((i) => (
               <button
@@ -606,6 +616,8 @@ export function Detail() {
           <img
             className={`detail-art view-${gallery}`}
             src={nft.image}
+            srcSet={artworkSources(nft.image)}
+            sizes="(max-width: 600px) calc(100vw - 56px), (max-width: 900px) 45vw, 460px"
             width="640"
             height="640"
             alt={nft.name}
@@ -617,22 +629,14 @@ export function Detail() {
           </p>
           <div className="flex justify-between items-start gap-4">
             <h1>{nft.name}</h1>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={
-                favorite ? "Remover dos favoritos" : "Adicionar aos favoritos"
-              }
-              aria-pressed={favorite}
-              onClick={() => toggle.mutate(!favorite)}
-              disabled={
-                toggle.isPending ||
-                sessionPending ||
-                (!!user && favorites.isPending)
-              }
+            <span
+              className="nft-rating"
+              aria-label={`Avaliação ${nft.rating ?? 0} de 5, ${nft.reviews?.length ?? 0} avaliações`}
             >
-              <Heart size={18} fill={favorite ? "currentColor" : "none"} />
-            </Button>
+              <span aria-hidden="true">★</span>
+              {nft.rating?.toFixed(1)}
+              <small>({nft.reviews?.length ?? 0})</small>
+            </span>
           </div>
           <p className="creator">
             Criado por{" "}
@@ -641,14 +645,43 @@ export function Detail() {
             </span>
           </p>
           <p className="detail-description">
-            Uma expressão única da cultura digital. Traços marcantes,
-            personalidade e detalhes que fazem desta peça uma parte especial da
-            sua coleção.
+            Um colecionável digital 1/50 finalizado à mão da coleção Kurio
+            Editions, verificado na {nft.network}.
           </p>
           <div className="detail-price">
             <span>Preço atual</span>
             <strong>{eth(nft.price)}</strong>
             {nft.previousPrice && <del>{eth(nft.previousPrice)}</del>}
+          </div>
+          <div
+            className="edition-options"
+            role="radiogroup"
+            aria-label="Edição do NFT"
+          >
+            {[...nft.editions]
+              .sort(
+                (a, b) =>
+                  Number(a.id === "original") - Number(b.id === "original"),
+              )
+              .map((item) => (
+                <label
+                  key={item.id}
+                  className={edition === item.id ? "selected" : ""}
+                >
+                  <input
+                    type="radio"
+                    name="edition-choice"
+                    checked={edition === item.id}
+                    disabled={!item.stock}
+                    onChange={() => {
+                      setEdition(item.id);
+                      setQuantity(1);
+                    }}
+                  />
+                  {item.id === "original" ? "1/50" : "1/10"}
+                </label>
+              ))}
+            <span className="edition-status">ABERTA</span>
           </div>
           <Field label="Edição">
             <select
@@ -665,84 +698,240 @@ export function Detail() {
               ))}
             </select>
           </Field>
-          <div className="quantity-line">
-            <Field label="Quantidade">
-              <input
-                aria-label="Quantidade"
-                type="number"
-                min="1"
-                max={Math.min(selected.stock, nft.stock)}
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-              />
-            </Field>
-            <span className="muted">
-              {Math.min(selected.stock, nft.stock)} disponíveis
-            </span>
+          <div className="token-facts">
+            <p>
+              ID do token: #
+              {nft.name.match(/#(\d+)/)?.[1].padStart(4, "0") ??
+                nft.id.replace("nft-", "").padStart(4, "0")}
+            </p>
+            <p>Coleção: Kurio Apes</p>
+            <p>Atributos: Óculos, Esmeralda, Raro</p>
           </div>
-          <div className="detail-buy">
-            <Button
-              disabled={
-                add.isPending ||
-                quantity < 1 ||
-                quantity > selected.stock ||
-                !nft.stock
-              }
-              onClick={() => add.mutate()}
-            >
-              <ShoppingBag size={16} />
-              {add.isPending ? "Adicionando…" : "Adicionar ao carrinho"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={async () => {
-                try {
-                  await add.mutateAsync();
-                  void navigate({ to: "/pagamento" });
-                } catch {
-                  /* feedback mutation */
+          <MobilePurchasePanel className="detail-purchase-panel">
+            <div className="mobile-purchase-price">
+              <strong>
+                {eth(
+                  fromWei(
+                    toWei(nft.price) *
+                      BigInt(
+                        Number.isSafeInteger(quantity) && quantity > 0
+                          ? quantity
+                          : 1,
+                      ),
+                  ),
+                )}
+              </strong>
+            </div>
+            <div className="quantity-line">
+              <button
+                type="button"
+                className="quantity-step"
+                aria-label="Diminuir quantidade"
+                disabled={quantity <= 1}
+                onClick={() => setQuantity((value) => value - 1)}
+              >
+                −
+              </button>
+              <Field label="Quantidade">
+                <input
+                  aria-label="Quantidade"
+                  type="number"
+                  min="1"
+                  max={Math.min(selected.stock, nft.stock)}
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                />
+              </Field>
+              <button
+                type="button"
+                className="quantity-step"
+                aria-label="Aumentar quantidade"
+                disabled={quantity >= Math.min(selected.stock, nft.stock)}
+                onClick={() => setQuantity((value) => value + 1)}
+              >
+                +
+              </button>
+              <span className="muted">
+                {Math.min(selected.stock, nft.stock)} disponíveis
+              </span>
+            </div>
+            <div className="detail-buy">
+              <Button
+                disabled={
+                  add.isPending ||
+                  quantity < 1 ||
+                  quantity > selected.stock ||
+                  !nft.stock
                 }
-              }}
-              disabled={
-                add.isPending ||
-                !nft.stock ||
-                quantity < 1 ||
-                quantity > selected.stock
-              }
-            >
-              Comprar agora <ArrowRight size={15} />
-            </Button>
-          </div>
-          <p className="simulation-note">
-            Compra demonstrativa · sem cobrança real
-          </p>
+                onClick={() => add.mutate()}
+              >
+                <span className="cart-plus-icon" aria-hidden="true">
+                  <ShoppingCart size={22} />
+                  <Plus size={11} />
+                </span>
+                {add.isPending ? "Adicionando…" : "Adicionar ao carrinho"}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await add.mutateAsync();
+                    void navigate({
+                      to: window.matchMedia("(max-width: 600px)").matches
+                        ? "/carrinho"
+                        : "/pagamento",
+                    });
+                  } catch {
+                    /* feedback mutation */
+                  }
+                }}
+                disabled={
+                  add.isPending ||
+                  !nft.stock ||
+                  quantity < 1 ||
+                  quantity > selected.stock
+                }
+              >
+                Comprar NFT <ArrowRight size={15} />
+              </Button>
+              <span className="desktop-purchase-favorite">
+                <FavoriteButton id={nft.id} />
+              </span>
+            </div>
+            <p className="simulation-note">
+              Compra demonstrativa · sem cobrança real
+            </p>
+          </MobilePurchasePanel>
+          <span className="mobile-product-favorite">
+            <FavoriteButton id={nft.id} />
+          </span>
         </div>
       </section>
       <section className="nft-description">
-        <PageTitle title="Detalhes do NFT" />
-        <p>
-          {nft.name} é uma peça da coleção {nft.creator}. Cada edição carrega
-          identidade própria e uma conexão com o universo criativo da arte
-          digital.
-        </p>
-        <dl>
-          <div>
-            <dt>Rede</dt>
-            <dd>{nft.network}</dd>
-          </div>
-          <div>
-            <dt>Contrato</dt>
-            <dd>
-              0x42…{nft.id.replace("nft-", "").padStart(4, "0")} · simulado
-            </dd>
-          </div>
-          <div>
-            <dt>Direitos autorais</dt>
-            <dd>A compra não transfere direitos autorais.</dd>
-          </div>
-        </dl>
+        <div
+          role="tablist"
+          aria-label="Informações do NFT"
+          className="review-tabs"
+          onKeyDown={(event) => {
+            if (
+              ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
+            ) {
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? "details"
+                  : event.key === "End"
+                    ? "reviews"
+                    : tab === "details"
+                      ? "reviews"
+                      : "details";
+              setTab(next);
+              document.getElementById(`tab-${next}`)?.focus();
+            }
+          }}
+        >
+          <button
+            role="tab"
+            id="tab-details"
+            aria-controls="panel-details"
+            aria-selected={tab === "details"}
+            tabIndex={tab === "details" ? 0 : -1}
+            onClick={() => setTab("details")}
+          >
+            Detalhes do NFT
+          </button>
+          <button
+            role="tab"
+            id="tab-reviews"
+            aria-controls="panel-reviews"
+            aria-selected={tab === "reviews"}
+            tabIndex={tab === "reviews" ? 0 : -1}
+            onClick={() => setTab("reviews")}
+          >
+            Avaliações de colecionadores ({nft.reviews?.length ?? 0})
+          </button>
+        </div>
+        <div
+          role="tabpanel"
+          id="panel-details"
+          aria-labelledby="tab-details"
+          hidden={tab !== "details"}
+        >
+          <p>
+            {nft.name} é uma peça da coleção {nft.creator}. Cada edição carrega
+            identidade própria e uma conexão com o universo criativo da arte
+            digital.
+          </p>
+          <dl>
+            <div>
+              <dt>Rede</dt>
+              <dd>{nft.network}</dd>
+            </div>
+            <div>
+              <dt>Contrato</dt>
+              <dd>
+                0x42…{nft.id.replace("nft-", "").padStart(4, "0")} · simulado
+              </dd>
+            </div>
+            <div>
+              <dt>Direitos autorais</dt>
+              <dd>A compra não transfere direitos autorais.</dd>
+            </div>
+          </dl>
+        </div>
+        <div
+          role="tabpanel"
+          id="panel-reviews"
+          aria-labelledby="tab-reviews"
+          hidden={tab !== "reviews"}
+          className="collector-reviews"
+        >
+          {nft.reviews?.length ? (
+            nft.reviews.map((review) => (
+              <article key={review.id}>
+                <header>
+                  <strong>{review.author}</strong>
+                  <span aria-label={`${review.rating} de 5 estrelas`}>
+                    {"★".repeat(review.rating)}
+                    {"☆".repeat(5 - review.rating)}
+                  </span>
+                </header>
+                <p>{review.text}</p>
+                <small>Avaliação fictícia para demonstração</small>
+              </article>
+            ))
+          ) : (
+            <p>Ainda não há avaliações desta peça.</p>
+          )}
+        </div>
       </section>
       <Related />
+      <Dialog
+        open={preview}
+        onOpenChange={setPreview}
+        title={nft.name}
+        description="Explore os detalhes da arte. As vistas mostram recortes da mesma peça."
+      >
+        <img
+          className={`preview-art view-${gallery}`}
+          src={nft.image}
+          alt={`Ampliação de ${nft.name}`}
+          width="640"
+          height="640"
+        />
+        <div className="preview-views">
+          {[0, 1, 2, 3].map((view) => (
+            <Button
+              key={view}
+              size="sm"
+              variant={view === gallery ? "default" : "outline"}
+              onClick={() => setGallery(view)}
+            >
+              Vista {view + 1}
+            </Button>
+          ))}
+        </div>
+      </Dialog>
     </>
   );
 }
@@ -760,7 +949,7 @@ export function Related() {
         </Link>
       </div>
       <div className="related-grid">
-        {data?.items.slice(1, 6).map((n) => (
+        {data?.items.slice(3, 8).map((n) => (
           <NFTCard key={n.id} nft={n} />
         ))}
       </div>
